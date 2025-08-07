@@ -1,5 +1,5 @@
 import { ERC20_ABI, USDC_ADDRESS } from "@/utils";
-import { useEmbeddedEthereumWallet } from "@privy-io/expo";
+import { useEmbeddedEthereumWallet, usePrivy } from "@privy-io/expo";
 import { createContext, useContext, useEffect, useState } from "react";
 import { createPublicClient, createWalletClient, custom, encodeFunctionData, publicActions, PublicClient, WalletClient } from "viem";
 import { monadTestnet } from "viem/chains";
@@ -18,7 +18,8 @@ interface WalletContextType {
 const WalletContext = createContext<WalletContextType | undefined>(undefined);
 
 export function WalletProvider({ children }: { children: React.ReactNode }) {
-  const { wallets } = useEmbeddedEthereumWallet();
+  const { wallets, create } = useEmbeddedEthereumWallet();
+  const { user, isReady } = usePrivy();
   const wallet = wallets?.[0] || null;
   const [walletClient, setWalletClient] = useState<WalletClient | null>(null);
   const [publicClient, setPublicClient] = useState<PublicClient | null>(null);
@@ -26,9 +27,31 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   const [isWalletCreated, setIsWalletCreated] = useState(false);
   const [walletCreationTime, setWalletCreationTime] = useState<Date | null>(null);
 
+  // Debug logging for wallet state
+  useEffect(() => {
+    console.log("🔍 WalletProvider: wallets array:", wallets);
+    console.log("🔍 WalletProvider: wallet object:", wallet);
+    console.log("🔍 WalletProvider: wallet address:", wallet?.address);
+    console.log("🔍 WalletProvider: user authenticated:", !!user);
+    console.log("🔍 WalletProvider: isReady:", isReady);
+  }, [wallets, wallet, user, isReady]);
+
   useEffect(() => {
     async function init() {
       setIsWalletLoading(true);
+      console.log("🚀 WalletProvider: Starting wallet initialization...");
+      
+      // Only proceed if user is authenticated and SDK is ready
+      if (!user || !isReady) {
+        console.log("⏳ User not authenticated or SDK not ready, skipping wallet initialization");
+        setIsWalletCreated(false);
+        setWalletCreationTime(null);
+        setWalletClient(null);
+        setPublicClient(null);
+        setIsWalletLoading(false);
+        return;
+      }
+      
       if (wallet && wallet.address) {
         try {
           console.log("🎉 Wallet detected and created:", wallet.address);
@@ -37,6 +60,8 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
           setWalletCreationTime(new Date());
           
           const provider = await wallet.getProvider();
+          console.log("🔧 WalletProvider: Got provider:", provider);
+          
           const publicClient = createPublicClient({
             chain: monadTestnet,
             transport: custom(provider),
@@ -55,7 +80,24 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
           setPublicClient(null);
         }
       } else {
-        console.log("⏳ No wallet detected yet - waiting for wallet creation...");
+        console.log("⏳ No wallet detected yet - attempting to create wallet...");
+        console.log("🔍 WalletProvider: wallets length:", wallets?.length);
+        console.log("🔍 WalletProvider: wallet object:", wallet);
+        
+        // Try to create a wallet if none exists and user is authenticated
+        if (wallets?.length === 0 && user) {
+          try {
+            console.log("🔄 Attempting to create embedded wallet...");
+            // Add a small delay to ensure authentication state is settled
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            const result = await create();
+            console.log("✅ Wallet creation initiated:", result);
+            // The wallet will be created asynchronously, so we'll wait for the next effect run
+          } catch (error) {
+            console.error("❌ Error creating wallet:", error);
+          }
+        }
+        
         setIsWalletCreated(false);
         setWalletCreationTime(null);
         setWalletClient(null);
@@ -68,7 +110,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       setWalletClient(null);
       setPublicClient(null);
     };
-  }, [wallet]);
+  }, [wallet, wallets, create, user, isReady]);
 
   async function getMONBalance() {
     if (publicClient && wallet?.address) {

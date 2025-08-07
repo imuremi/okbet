@@ -17,12 +17,11 @@ export default function DemoLayout() {
                 appId={appId}
                 supportedChains={[monadTestnet]}
                 config={{
-                    embeddedWallets: {
-                        createOnLogin: "users-without-wallets",
-                        requireUserPasswordOnCreate: false,
-                        showWalletUIs: true
+                    embedded: {
+                        ethereum: {
+                            createOnLogin: 'all-users',
+                        },
                     },
-                    loginMethods: ['email']
                 }}
             >
                 <Slot />
